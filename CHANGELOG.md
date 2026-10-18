@@ -4,6 +4,15 @@ All notable changes to ReHoarder are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-10-19
+
+Two new actions in the Engines tab's context menu for engines that Unreal's Version Selector can't find: re-list one in the Epic Games Launcher install list, and give a source build a readable name instead of its GUID.
+
+### Added
+
+- **Register with Epic Launcher**: adds the engine to `C:\ProgramData\Epic\UnrealEngineLauncher\LauncherInstalled.dat`, the file Unreal's Version Selector and the `.uproject` association read to resolve `5.7`-style engine versions. It restores an engine whose entry went missing (a copied engine folder, or launcher data wiped by a launcher update) without downloading anything. An existing entry for the same version is updated in place, the file is backed up once as `LauncherInstalled.dat.rehoarder.bak`, and a warning is shown when the Epic Games Launcher is running because it can rewrite the file. Catalog ids are known for 4.27 and 5.5 to 5.8; other versions are written without one, which the Version Selector does not need.
+- **Rename registration…**: a source build registered under `HKCU\Software\Epic Games\Unreal Engine\Builds` can be renamed from its GUID to a readable name, so the `EngineAssociation` in a shared repo is the same on every machine that registers the build under that name. The dialog validates the name (not a GUID, not an `X.Y` launcher version, not already used) and lists the projects in your project folders that use the old name. Their `EngineAssociation` is rewritten in place with a `.uproject.bak`, and the old registration is removed only when every project was updated.
+
 ## [0.6.1] — 2026-10-02
 
 Two fixes: Add to project into a subfolder no longer fails on packs whose maps reference an asset Unreal brings back at its old path, and the default vault is now the Epic Games Launcher's own VaultCache, created when it is missing.
