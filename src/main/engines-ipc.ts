@@ -9,6 +9,18 @@ import {
   type CreateShortcutResult
 } from './engine-actions'
 import {
+  registerEngineWithLauncher,
+  type RegisterWithLauncherResult
+} from './engine-launcher-registration'
+import {
+  findBuildRegistration,
+  isGuidName,
+  previewRegistrationRename,
+  renameBuildRegistration,
+  type RenamePreviewResult,
+  type RenameRegistrationResult
+} from './engine-registration-rename'
+import {
   listEnginePluginsRich,
   setEnginePluginState,
   uninstallEnginePlugin,
@@ -957,6 +969,45 @@ export function registerEnginesIpc(settings: SettingsStore): void {
     'engines:uninstall',
     async (_e, engineRoot: string): Promise<UninstallEngineResult> => {
       return await uninstallEngine(settings, engineRoot)
+    }
+  )
+
+  ipcMain.handle(
+    'engines:register-with-launcher',
+    async (_e, engineRoot: string): Promise<RegisterWithLauncherResult> => {
+      if (!isInsideEngineRoots(engineRoot)) {
+        return { ok: false, error: 'Engine path is outside the configured engine roots' }
+      }
+      return await registerEngineWithLauncher(engineRoot)
+    }
+  )
+
+  ipcMain.handle(
+    'engines:registration-name',
+    async (_e, engineRoot: string): Promise<{ name: string | null; isGuid: boolean }> => {
+      if (!isInsideEngineRoots(engineRoot)) return { name: null, isGuid: false }
+      const reg = await findBuildRegistration(engineRoot)
+      return { name: reg?.name ?? null, isGuid: reg ? isGuidName(reg.name) : false }
+    }
+  )
+
+  ipcMain.handle(
+    'engines:rename-registration-preview',
+    async (_e, engineRoot: string, newName: string): Promise<RenamePreviewResult> => {
+      if (!isInsideEngineRoots(engineRoot)) {
+        return { ok: false, error: 'Engine path is outside the configured engine roots' }
+      }
+      return await previewRegistrationRename(engineRoot, newName, settings.load().projectPaths)
+    }
+  )
+
+  ipcMain.handle(
+    'engines:rename-registration',
+    async (_e, engineRoot: string, newName: string): Promise<RenameRegistrationResult> => {
+      if (!isInsideEngineRoots(engineRoot)) {
+        return { ok: false, error: 'Engine path is outside the configured engine roots' }
+      }
+      return await renameBuildRegistration(engineRoot, newName, settings.load().projectPaths)
     }
   )
 

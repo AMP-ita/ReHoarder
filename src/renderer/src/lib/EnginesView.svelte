@@ -61,6 +61,8 @@
     /** Snapshotted at open time so the menu items can show/hide Restore. */
     editorSettings: { hasBackup: boolean; hasSentinel: boolean } | null
     keybindings: { hasBackup: boolean; hasSentinel: boolean } | null
+    /** Name this engine is registered under in HKCU Builds; null when it isn't (launcher installs). */
+    buildName: string | null
   } | null>(null)
   let editorSettingsStatus = $state<string | null>(null)
   let editorSettingsError = $state<string | null>(null)
@@ -268,14 +270,16 @@
       y: e.clientY,
       engine,
       editorSettings: null,
-      keybindings: null
+      keybindings: null,
+      buildName: null
     }
     // Best-effort: fetch both editor-settings and keybindings status so the
     // menu can hide Restore items when there's nothing to restore from.
     // Either call failing is harmless — the menu still works.
-    const [esRes, kbRes] = await Promise.all([
+    const [esRes, kbRes, regRes] = await Promise.all([
       window.api.engines.editorSettingsInfo(engine.path).catch(() => null),
-      window.api.engines.keybindingsInfo(engine.path).catch(() => null)
+      window.api.engines.keybindingsInfo(engine.path).catch(() => null),
+      window.api.engines.registrationName(engine.path).catch(() => null)
     ])
     if (!contextMenu || contextMenu.engine.path !== engine.path) return
     contextMenu = {
@@ -285,7 +289,8 @@
         : null,
       keybindings: kbRes?.ok
         ? { hasBackup: kbRes.hasBackup, hasSentinel: kbRes.hasSentinel }
-        : null
+        : null,
+      buildName: regRes?.name ?? null
     }
   }
 
@@ -472,6 +477,96 @@
       }
       defaultEngineVersion = version
       endEngineAction(id, 'ok', `${eng.name} is now the default engine.`)
+    } catch (err) {
+      endEngineAction(id, 'error', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  async function ctxRegisterWithLauncher(): Promise<void> {
+    if (!contextMenu) return
+    const eng = contextMenu.engine
+    closeContextMenu()
+    const id = startEngineAction(eng, 'Registering with Epic Launcher')
+    try {
+      const r = await window.api.engines.registerWithLauncher(eng.path)
+      if (!r.ok) {
+        endEngineAction(id, 'error', r.error ?? 'Could not register the engine')
+        return
+      }
+      let msg = r.alreadyListed
+        ? `${r.appName} was already listed, its entry is now up to date.`
+        : `${r.appName} added to the Epic Launcher install list.`
+      if (r.launcherRunning) {
+        msg += ' The Epic Games Launcher is running and may overwrite the list: close it from the tray and register again.'
+      }
+      if (r.unknownItemId) {
+        msg += ' The catalog id of this version is unknown, so the entry has none (the Version Selector does not need it).'
+      }
+      endEngineAction(id, 'ok', msg)
+    } catch (err) {
+      endEngineAction(id, 'error', err instanceof Error ? err.message : String(err))
+    }
+  }
+
+  /** Rename-registration dialog; non-null = open. `projects` is the preview of
+   *  the .uproject files that will be retargeted. */
+  let renameTarget = $state<{
+    engine: EngineInfo
+    oldName: string
+    newName: string
+    projects: Array<{ name: string; uprojectPath: string }> | null
+    error: string | null
+    busy: boolean
+  } | null>(null)
+  let renamePreviewSeq = 0
+
+  function ctxRenameRegistration(): void {
+    if (!contextMenu?.buildName) return
+    const eng = contextMenu.engine
+    const oldName = contextMenu.buildName
+    closeContextMenu()
+    renameTarget = { engine: eng, oldName, newName: '', projects: null, error: null, busy: false }
+  }
+
+  async function refreshRenamePreview(): Promise<void> {
+    const t = renameTarget
+    if (!t) return
+    const seq = ++renamePreviewSeq
+    const name = t.newName.trim()
+    if (!name) {
+      renameTarget = { ...t, projects: null, error: null }
+      return
+    }
+    const r = await window.api.engines.renameRegistrationPreview(t.engine.path, name)
+    if (seq !== renamePreviewSeq || !renameTarget) return
+    renameTarget = {
+      ...renameTarget,
+      projects: r.ok ? (r.projects ?? []) : null,
+      error: r.ok ? null : (r.error ?? 'Invalid name')
+    }
+  }
+
+  async function confirmRenameRegistration(): Promise<void> {
+    const t = renameTarget
+    if (!t || t.busy || t.error || !t.newName.trim()) return
+    renameTarget = { ...t, busy: true }
+    const name = t.newName.trim()
+    renameTarget = null
+    const id = startEngineAction(t.engine, 'Renaming registration')
+    try {
+      const r = await window.api.engines.renameRegistration(t.engine.path, name)
+      if (!r.ok) {
+        endEngineAction(id, 'error', r.error ?? 'Could not rename the registration')
+        return
+      }
+      const n = r.updatedProjects ?? 0
+      const msg = `Registered as "${name}", ${n} project${n === 1 ? '' : 's'} retargeted.`
+      if (r.error || (r.failures && r.failures.length > 0)) {
+        const failed = (r.failures ?? []).map((f) => `${f.uprojectPath}: ${f.error}`).join('; ')
+        endEngineAction(id, 'error', `${msg} ${r.error ?? ''} ${failed}`.trim())
+        return
+      }
+      endEngineAction(id, 'ok', msg)
     } catch (err) {
       endEngineAction(id, 'error', err instanceof Error ? err.message : String(err))
     }
@@ -748,6 +843,14 @@
         Set as default engine
       </button>
     {/if}
+    <button type="button" role="menuitem" onclick={() => void ctxRegisterWithLauncher()}>
+      Register with Epic Launcher
+    </button>
+    {#if cm.buildName}
+      <button type="button" role="menuitem" onclick={() => void ctxRenameRegistration()}>
+        Rename registration…
+      </button>
+    {/if}
     <button type="button" role="menuitem" onclick={() => void ctxCreateShortcut()}>
       Create desktop shortcut
     </button>
@@ -818,6 +921,62 @@
         <button type="button" class="ghost" onclick={() => (uninstallingEngine = null)}>Cancel</button>
         <button type="button" class="danger" onclick={() => void confirmUninstall()}>
           Uninstall engine
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+{#if renameTarget}
+  {@const rt = renameTarget}
+  <div
+    class="confirm-backdrop"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onmousedown={() => (renameTarget = null)}
+  >
+    <div class="confirm-popup" onmousedown={(e) => e.stopPropagation()} role="document">
+      <h3>Rename registration of <code>{rt.engine.name}</code></h3>
+      <p class="confirm-text">
+        Currently registered as <code>{rt.oldName}</code>. Pick a readable name: projects built on
+        this engine get it as their <code>EngineAssociation</code>, so everyone sharing the
+        repo must register the build under the same name.
+      </p>
+      <!-- svelte-ignore a11y_autofocus -->
+      <input
+        type="text"
+        class="rename-input"
+        placeholder="e.g. AssetDowngrader"
+        autofocus
+        bind:value={rt.newName}
+        oninput={() => void refreshRenamePreview()}
+        onkeydown={(e) => {
+          if (e.key === 'Enter') void confirmRenameRegistration()
+        }}
+      />
+      {#if rt.error}
+        <p class="confirm-text small">{rt.error}</p>
+      {:else if rt.projects}
+        <p class="confirm-text small">
+          {#if rt.projects.length === 0}
+            No project in your configured project folders uses <code>{rt.oldName}</code>.
+          {:else}
+            {rt.projects.length} project{rt.projects.length === 1 ? '' : 's'} will be retargeted
+            (a <code>.uproject.bak</code> is kept):
+            {rt.projects.map((p) => p.name).join(', ')}
+          {/if}
+        </p>
+      {/if}
+      <div class="confirm-actions">
+        <button type="button" class="ghost" onclick={() => (renameTarget = null)}>Cancel</button>
+        <button
+          type="button"
+          class="primary"
+          disabled={!rt.newName.trim() || !!rt.error || rt.busy}
+          onclick={() => void confirmRenameRegistration()}
+        >
+          Rename
         </button>
       </div>
     </div>
@@ -1526,6 +1685,13 @@
     background: #7a3737;
     border-color: #9a4747;
   }
+  .rename-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin: 8px 0;
+    padding: 6px 8px;
+  }
+
   .confirm-text {
     margin: 0 0 0.6rem;
     color: #d0d0d0;

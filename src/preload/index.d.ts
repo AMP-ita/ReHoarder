@@ -779,6 +779,10 @@ export interface EnginesApi {
   useKeybindingsPresetFromLibrary(id: string): Promise<UseIniPresetResult>
   openKeybindingsFile(masterPath: string): Promise<EnginesOpenResult>
   uninstall(engineRoot: string): Promise<UninstallEngineResult>
+  registerWithLauncher(engineRoot: string): Promise<RegisterWithLauncherResult>
+  registrationName(engineRoot: string): Promise<{ name: string | null; isGuid: boolean }>
+  renameRegistrationPreview(engineRoot: string, newName: string): Promise<RenamePreviewResult>
+  renameRegistration(engineRoot: string, newName: string): Promise<RenameRegistrationResult>
   setDefaultVersion(version: string): Promise<{ ok: boolean; error?: string }>
   createShortcut(req: { engineRoot: string; shortcutName: string }): Promise<CreateShortcutResult>
 }
@@ -1053,6 +1057,31 @@ export interface CreateShortcutResult {
   ok: boolean
   error?: string
   shortcutPath?: string
+}
+
+export interface RenamePreviewResult {
+  ok: boolean
+  error?: string
+  oldName?: string
+  projects?: Array<{ name: string; uprojectPath: string }>
+}
+
+export interface RenameRegistrationResult {
+  ok: boolean
+  error?: string
+  oldName?: string
+  updatedProjects?: number
+  failures?: Array<{ uprojectPath: string; error: string }>
+}
+
+export interface RegisterWithLauncherResult {
+  ok: boolean
+  error?: string
+  appName?: string
+  alreadyListed?: boolean
+  launcherRunning?: boolean
+  unknownItemId?: boolean
+  datPath?: string
 }
 
 export interface UninstallEngineResult {

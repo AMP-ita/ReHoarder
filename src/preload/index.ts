@@ -1077,6 +1077,22 @@ const api = {
       ipcRenderer.invoke('engines:open-keybindings-file', masterPath),
     uninstall: (engineRoot: string): Promise<UninstallEngineResult> =>
       ipcRenderer.invoke('engines:uninstall', engineRoot),
+    registerWithLauncher: (
+      engineRoot: string
+    ): Promise<import('./index.d').RegisterWithLauncherResult> =>
+      ipcRenderer.invoke('engines:register-with-launcher', engineRoot),
+    registrationName: (engineRoot: string): Promise<{ name: string | null; isGuid: boolean }> =>
+      ipcRenderer.invoke('engines:registration-name', engineRoot),
+    renameRegistrationPreview: (
+      engineRoot: string,
+      newName: string
+    ): Promise<import('./index.d').RenamePreviewResult> =>
+      ipcRenderer.invoke('engines:rename-registration-preview', engineRoot, newName),
+    renameRegistration: (
+      engineRoot: string,
+      newName: string
+    ): Promise<import('./index.d').RenameRegistrationResult> =>
+      ipcRenderer.invoke('engines:rename-registration', engineRoot, newName),
     setDefaultVersion: (version: string): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('engines:set-default-version', version),
     createShortcut: (req: {
